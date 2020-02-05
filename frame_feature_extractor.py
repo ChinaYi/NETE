@@ -1,5 +1,4 @@
 import torch
-import torchvision.models as models
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -11,6 +10,7 @@ import random
 from tqdm import tqdm
 
 import dataset
+from model import inception_v3
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 seed = 19980125
@@ -24,7 +24,7 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--action', choices=['train', 'extract', 'test'], default='train')
+parser.add_argument('--action', choices=['train', 'extract', 'test', 'validate'], default='train')
 parser.add_argument('--dataset', default="cholec80")
 args = parser.parse_args()
 
@@ -51,7 +51,7 @@ def train(model, train_loader, validation_loader):
 
         for (imgs, labels, img_names) in tqdm(train_loader):
             imgs, labels = imgs.to(device), labels.to(device)
-            res = model(imgs) # of shape 64 x 7
+            feature, res = model(imgs) # of shape 64 x 7
             loss = loss_layer(res, labels)
             loss_item += loss.item()
             _, prediction = torch.max(res.data, 1)
@@ -79,13 +79,14 @@ def test(model, test_loader):
     with torch.no_grad():
         for (imgs, labels, img_names) in tqdm(test_loader):
             imgs, labels = imgs.to(device), labels.to(device)
-            res = model(imgs)  # of shape 64 x 7
+            feature, res = model(imgs)  # of shape 64 x 7
             loss = loss_layer(res, labels)
             loss_item += loss.item()
             _, prediction = torch.max(res.data, 1)
             correct += ((prediction == labels).sum()).item()
             total += len(prediction)
     print('Test: Acc {}, Loss {}'.format(correct / total, loss_item / total))
+
 
 
 def extract(model, loader, save_path):
@@ -105,18 +106,20 @@ def extract(model, loader, save_path):
                 continue
 
             imgs, labels = imgs.to(device), labels.to(device)
-            features = model(imgs)
-            features = F.adaptive_avg_pool2d(features, (1, 1))
-            features = features.view(features.size(0), -1) # of shape 1 x 2048
-            features = features.to('cpu').numpy()
+            features, res = model(imgs)
+            features = features.to('cpu').numpy() # of shape 1 x 2048
 
             np.save(feature_save_path, features)
+
+
 
 
 def imgf2videof(source_folder, target_folder):
     '''
         Merge the extracted img feature to video feature.
     '''
+    if not os.path.exists(target_folder):
+        os.makedirs(target_folder)
     for video in os.listdir(source_folder):
         video_abs_path = os.path.join(source_folder, video)
         nums_of_imgs = len(os.listdir(video_abs_path))
@@ -131,7 +134,7 @@ def imgf2videof(source_folder, target_folder):
         print('{} done!'.format(video))
 
 
-inception = models.inception_v3(pretrained=True, aux_logits=False)
+inception = inception_v3(pretrained=True, aux_logits=False)
 fc_features = inception.fc.in_features
 inception.fc = nn.Linear(fc_features, len(dataset.phase2label_dicts[args.dataset]))
 
@@ -145,22 +148,20 @@ if args.action == 'train':
     train(inception, framewise_train_dataloader, framewise_test_dataloader)
 
 if args.action == 'test':
-    model_path = 'models/framewise_feature/10.model'
+    model_path = 'models/framewise_feature/2.model'
     inception.load_state_dict(torch.load(model_path))
     framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
     framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=64, shuffle=True, drop_last=False)
     test(inception, framewise_test_dataloader)
 
 if args.action == 'extract':
-    # model_path = 'models/framewise_feature/10.model'
-    # inception.load_state_dict(torch.load(model_path))
-    framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
+    model_path = 'models/framewise_feature/2.model'
+    inception.load_state_dict(torch.load(model_path))
+    framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/train_dataset')
     framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=False, drop_last=False)
 
-    new_model = nn.Sequential(*list(inception.children())[:-1])  # remove the last fc-layer
-    extract(new_model, framewise_test_dataloader, 'cholec80/test_dataset/feature_folder/')
-
-
+    extract(inception, framewise_test_dataloader, 'cholec80/train_dataset/feature_folder/')
+    imgf2videof('cholec80/train_dataset/feature_folder/', 'cholec80/train_dataset/video_feature_folder/')
 
 
 

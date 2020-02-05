@@ -67,31 +67,40 @@ class FramewiseDataset(Dataset):
         return labels
 
 class VideoDataset(Dataset):
-    def __init__(self, dataset, root):
+    def __init__(self, dataset, root, sample_rate):
         self.dataset = dataset
+        self.sample_rate = sample_rate
         self.videos = []
         self.labels = []
+        self.hard_frames = []
         self.video_names = []
+        self.hard_frame_index = 7 if dataset == 'cholec80' else 8
 
         video_feature_folder = os.path.join(root, 'video_feature_folder')
         label_folder = os.path.join(root, 'annotation_folder')
+        hard_frames_folder = os.path.join(root, 'hard_frames')
         for v_f in os.listdir(video_feature_folder):
             v_f_abs_path = os.path.join(video_feature_folder, v_f)
             v_label_file_abs_path = os.path.join(label_folder, v_f.split('.')[0] + '.txt')
+            v_hard_frame_abs_path = os.path.join(hard_frames_folder, v_f.split('.')[0] + '.txt')
             labels = self.read_labels(v_label_file_abs_path)
+            masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
 
-            self.videos.append(np.load(v_f_abs_path))
-            self.labels.append(labels)
+            assert len(labels) == len(masks)
+
+            self.videos.append(np.load(v_f_abs_path)[::sample_rate,])
+            self.labels.append(labels[::sample_rate])
+            self.hard_frames.append(masks[::sample_rate])
             self.video_names.append(v_f)
 
-        print('VideoDataset: Load dataset {} with {} images.'.format(self.dataset, self.__len__()))
+        print('VideoDataset: Load dataset {} with {} videos.'.format(self.dataset, self.__len__()))
 
     def __len__(self):
         return len(self.videos)
 
     def __getitem__(self, item):
-        video, label, video_name = self.videos[item], self.labels[item], self.video_names[item]
-        return video, label, video_name
+        video, label, mask, video_name = self.videos[item], self.labels[item], self.hard_frames[item], self.video_names[item]
+        return video, label, mask, video_name
 
     def read_labels(self, label_file):
         with open(label_file,'r') as f:
@@ -99,12 +108,21 @@ class VideoDataset(Dataset):
             labels = phase2label(phases, phase2label_dicts[self.dataset])
         return labels
 
+    def read_hard_frames(self, hard_frame_file, hard_frame_index):
+        with open(hard_frame_file, 'r') as f:
+            labels = [int(line.strip().split('\t')[1]) for line in f.readlines()]
+#         masks = np.array(labels)
+#         masks[masks != hard_frame_index] = 1
+#         masks[masks == hard_frame_index] = 0
+#         return masks.tolist()
+        return labels
+
 if __name__ == '__main__':
     '''
         UNIT TEST
     '''
-    framewisedataset_cholec80 = FramewiseDataset('cholec80','cholec80/train_dataset')
+    framewisedataset_cholec80 = FramewiseDataset('cholec80','cholec80/train_dataset', 5)
     framewisedataloader_cholec80 = DataLoader(framewisedataset_cholec80, batch_size=64, shuffle=True, drop_last=False)
 
-    videodataset_cholec80 = VideoDataset('cholec80', 'cholec80/train_dataset')
+    videodataset_cholec80 = VideoDataset('cholec80', 'cholec80/train_dataset', 5)
     videodataloader_cholec80 = DataLoader(videodataset_cholec80, batch_size=1, shuffle=True, drop_last=False)
