@@ -28,12 +28,11 @@ class SingleStageCausalTCN(nn.Module):
 class MultiStageCausalTCN(nn.Module):
     def __init__(self, num_stages, num_layers, num_f_maps, dim, num_classes):
         super(MultiStageCausalTCN, self).__init__()
-        self.stage1 = SingleStageCausalTCN(num_layers, num_f_maps, dim, num_classes + 1)
-        self.stages = nn.ModuleList([copy.deepcopy(SingleStageCausalTCN(num_layers, num_f_maps, num_classes + 1, num_classes + 1)) for s in range(num_stages-1)])
+        self.stage1 = SingleStageCausalTCN(num_layers, num_f_maps, dim, num_classes)
+        self.stages = nn.ModuleList([copy.deepcopy(SingleStageCausalTCN(num_layers, num_f_maps, num_classes, num_classes - 1)) for s in range(num_stages-1)])
         self.dropout = nn.Dropout2d(p=0.5)
-        self.dropout2 = nn.Dropout2d(p=0.3)
 
-    def forward(self, x, mask):
+    def forward(self, x):
         # x of shape (bs, L, C_in)
         x = x.permute(0,2,1) # (bs, c, l)
         #if mask is None:

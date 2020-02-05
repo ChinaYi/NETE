@@ -9,6 +9,7 @@ import argparse
 import numpy as np
 import random
 from tqdm import tqdm
+from sklearn.model_selection  import KFold
 
 from dataset import *
 import model
@@ -26,7 +27,7 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--action', choices=['train', 'predict', 'test'], default='train')
+parser.add_argument('--action', choices=['train', 'predict', 'test', 'cross_validate'], default='train')
 parser.add_argument('--dataset', default="cholec80")
 parser.add_argument('--sample_rate', default=2, type=int)
 args = parser.parse_args()
@@ -58,7 +59,7 @@ def train(model, train_loader, validation_loader):
         total = 0
         loss_item = 0
         optimizer = torch.optim.Adam(model.parameters(), learning_rate, weight_decay=1e-5)
-        for (video, labels, mask, video_name) in tqdm(train_loader):
+        for (video, labels, mask, video_name) in (train_loader):
             labels = torch.Tensor(labels).long()
             mask = torch.Tensor(mask).long()
             mask = mask.to(device)
@@ -81,7 +82,75 @@ def train(model, train_loader, validation_loader):
 
         print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
         test(model, validation_loader)
-        torch.save(model.state_dict(), save_dir + "/{}.model".format(epoch))
+        torch.save(model.state_dict(), save_dir + '/{}.model'.format(epoch))
+
+def cross_validate(model, train_dataset, validation_dataset, hard_frame_save_dir, hard_frame_idx):
+    global learning_rate, epochs
+    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=False)
+    validation_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False, drop_last=False)
+    mse_layer = nn.MSELoss(reduction='none')
+
+    model.to(device)
+    save_dir = 'models/validate_tcn/'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    if not os.path.exists(hard_frame_save_dir):
+        os.makedirs(hard_frame_save_dir)
+    for epoch in range(1, epochs + 1):
+        if epoch % 30 == 0:
+            learning_rate = learning_rate * 0.5
+        model.train()
+        correct = 0
+        total = 0
+        loss_item = 0
+        optimizer = torch.optim.Adam(model.parameters(), learning_rate, weight_decay=1e-5)
+        for (video, labels, mask, video_name) in (train_loader):
+            labels = torch.Tensor(labels).long()
+            video, labels = video.to(device), labels.to(device)
+            outputs = model(video)
+
+            loss = 0
+            for stage, p in enumerate(outputs):
+                loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
+                loss += 0.15 * torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
+
+            loss_item += loss.item()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            _, predicted = torch.max(outputs[-1].data, 1)
+            correct += ((predicted == labels).sum()).item()
+            total += labels.shape[0]
+        print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
+    
+    model.eval()
+    with torch.no_grad():
+        correct = 0
+        total = 0
+        for (video, labels, mask, video_name) in validation_loader:
+            hard_frame_file = os.path.join(hard_frame_save_dir, video_name[0].split('.')[0] + '.txt')
+            labels = torch.Tensor(labels).long()
+            video, labels = video.to(device), labels.to(device)
+            outputs = model(video)
+            _, predicted = torch.max(outputs[-1].data, 1)
+            
+            correct += ((predicted == labels).sum()).item()
+            total += labels.shape[0]
+            
+            predicted[predicted != labels] = hard_frame_idx
+            predicted = predicted.squeeze().tolist()
+            
+            h_ptr = open(hard_frame_file, "w")
+            for index, line in enumerate(predicted):
+                h_ptr.write('{}\t{}\n'.format(index, line))
+            h_ptr.close()
+
+        print('Test: Acc {}'.format(correct / total))
+        
+    model_path = '_'.join(train_dataset.blacklist)
+    torch.save(model.state_dict(), save_dir + '{}.model'.format(model_path))
+    
 
 def test(model, test_loader):
     model.to(device)
@@ -171,4 +240,18 @@ if args.action == 'predict':
     predict(causal_tcn,video_test_dataloader,args.dataset, sample_rate, results_dir)
     
 if args.action == 'cross_validate':
+    kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
+    video_list = ['video{0:>2d}'.format(i) for i in range(1,41)]
+    for train_idx, test_idx in kf.split(video_list):
+        single_stage_tcn = model.MultiStageCausalTCN(1, num_layers, num_f_maps, dim, num_classes) # single stage
+        trainlist = ['video{:0>2d}'.format(i+1) for i in train_idx]
+        testlist = ['video{:0>2d}'.format(i+1) for i in test_idx]
+        
+        video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, blacklist=testlist)
+        video_testdataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, blacklist=trainlist)
+        cross_validate(single_stage_tcn, video_traindataset, video_testdataset, 'cholec80/train_dataset/hard_frames@{}'.format(sample_rate), 7)
+#     if args.dataset == 'cholec80':
+#         trainlist = ['video{0:>2d}'.format(i) for i in range(1,41)]
+    
+    
     

@@ -67,9 +67,10 @@ class FramewiseDataset(Dataset):
         return labels
 
 class VideoDataset(Dataset):
-    def __init__(self, dataset, root, sample_rate):
+    def __init__(self, dataset, root, sample_rate, blacklist=[], load_hard_frames = False):
         self.dataset = dataset
         self.sample_rate = sample_rate
+        self.blacklist = blacklist # for cross-validate
         self.videos = []
         self.labels = []
         self.hard_frames = []
@@ -80,17 +81,24 @@ class VideoDataset(Dataset):
         label_folder = os.path.join(root, 'annotation_folder')
         hard_frames_folder = os.path.join(root, 'hard_frames')
         for v_f in os.listdir(video_feature_folder):
+            if v_f.split('.')[0] in blacklist:
+                continue
             v_f_abs_path = os.path.join(video_feature_folder, v_f)
             v_label_file_abs_path = os.path.join(label_folder, v_f.split('.')[0] + '.txt')
             v_hard_frame_abs_path = os.path.join(hard_frames_folder, v_f.split('.')[0] + '.txt')
             labels = self.read_labels(v_label_file_abs_path)
-            masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
-
+            
+            labels = labels[::sample_rate]
+            videos = np.load(v_f_abs_path)[::sample_rate,]
+            if load_hard_frames:
+                masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
+            else:
+                masks = labels[::]
             assert len(labels) == len(masks)
 
-            self.videos.append(np.load(v_f_abs_path)[::sample_rate,])
-            self.labels.append(labels[::sample_rate])
-            self.hard_frames.append(masks[::sample_rate])
+            self.videos.append(videos)
+            self.labels.append(labels)
+            self.hard_frames.append(masks)
             self.video_names.append(v_f)
 
         print('VideoDataset: Load dataset {} with {} videos.'.format(self.dataset, self.__len__()))
