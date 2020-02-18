@@ -37,7 +37,7 @@ epochs = 50
 loss_layer = nn.CrossEntropyLoss()
 
 num_stages = 2
-num_layers = 12
+num_layers = 12 #12
 num_f_maps = 64
 dim = 2048
 sample_rate = args.sample_rate
@@ -46,7 +46,7 @@ num_classes = len(phase2label_dicts[args.dataset])
 def train(model, train_loader, validation_loader):
     global learning_rate, epochs
     mse_layer = nn.MSELoss(reduction='none')
-
+    partial_entropy = nn.CrossEntropyLoss(reduction='none')
     model.to(device)
     save_dir = 'models/tcn/'
     if not os.path.exists(save_dir):
@@ -62,21 +62,35 @@ def train(model, train_loader, validation_loader):
         for (video, labels, mask, video_name) in (train_loader):
             labels = torch.Tensor(labels).long()
             mask = torch.Tensor(mask).long()
+            
+            zero_one_mask = (mask!=7).to(device).float()
+
+            # random label for hard frames in the training
+            mask[(mask==7).nonzero()]= torch.randint(low=0, high=7, size=(mask==7).nonzero().shape)
             mask = mask.to(device)
+#             import pdb
+#             pdb.set_trace()
             video, labels = video.to(device), labels.to(device)
-            outputs = model(video, None)
+            outputs = model(video)
 
             loss = 0
             for stage, p in enumerate(outputs):
-                loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
-                loss += 0.15 * torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
+                if stage == 0: # The first stage
+#                     tmp = partial_entropy(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
+#                     loss += torch.mean(tmp * mask)
+                    loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
+                    loss += torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
+
+#                 else:
+#                     loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
+#                     loss += torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
 
             loss_item += loss.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            _, predicted = torch.max(outputs[-1].data, 1)
+            _, predicted = torch.max(outputs[0].data, 1)
             correct += ((predicted == labels).sum()).item()
             total += labels.shape[0]
 
@@ -84,73 +98,73 @@ def train(model, train_loader, validation_loader):
         test(model, validation_loader)
         torch.save(model.state_dict(), save_dir + '/{}.model'.format(epoch))
 
-def cross_validate(model, train_dataset, validation_dataset, hard_frame_save_dir, hard_frame_idx):
-    global learning_rate, epochs
-    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=False)
-    validation_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False, drop_last=False)
-    mse_layer = nn.MSELoss(reduction='none')
-
-    model.to(device)
-    save_dir = 'models/validate_tcn/'
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    if not os.path.exists(hard_frame_save_dir):
-        os.makedirs(hard_frame_save_dir)
-    for epoch in range(1, epochs + 1):
-        if epoch % 30 == 0:
-            learning_rate = learning_rate * 0.5
-        model.train()
-        correct = 0
-        total = 0
-        loss_item = 0
-        optimizer = torch.optim.Adam(model.parameters(), learning_rate, weight_decay=1e-5)
-        for (video, labels, mask, video_name) in (train_loader):
-            labels = torch.Tensor(labels).long()
-            video, labels = video.to(device), labels.to(device)
-            outputs = model(video)
-
-            loss = 0
-            for stage, p in enumerate(outputs):
-                loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
-                loss += 0.15 * torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
-
-            loss_item += loss.item()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            _, predicted = torch.max(outputs[-1].data, 1)
-            correct += ((predicted == labels).sum()).item()
-            total += labels.shape[0]
-        print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
-    
-    model.eval()
-    with torch.no_grad():
-        correct = 0
-        total = 0
-        for (video, labels, mask, video_name) in validation_loader:
-            hard_frame_file = os.path.join(hard_frame_save_dir, video_name[0].split('.')[0] + '.txt')
-            labels = torch.Tensor(labels).long()
-            video, labels = video.to(device), labels.to(device)
-            outputs = model(video)
-            _, predicted = torch.max(outputs[-1].data, 1)
-            
-            correct += ((predicted == labels).sum()).item()
-            total += labels.shape[0]
-            
-            predicted[predicted != labels] = hard_frame_idx
-            predicted = predicted.squeeze().tolist()
-            
-            h_ptr = open(hard_frame_file, "w")
-            for index, line in enumerate(predicted):
-                h_ptr.write('{}\t{}\n'.format(index, line))
-            h_ptr.close()
-
-        print('Test: Acc {}'.format(correct / total))
-        
-    model_path = '_'.join(train_dataset.blacklist)
-    torch.save(model.state_dict(), save_dir + '{}.model'.format(model_path))
-    
+# def cross_validate(model, train_dataset, validation_dataset, hard_frame_save_dir, hard_frame_idx):
+#     global learning_rate, epochs
+#     train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=False)
+#     validation_loader = DataLoader(validation_dataset, batch_size=1, shuffle=False, drop_last=False)
+#     mse_layer = nn.MSELoss(reduction='none')
+# 
+#     model.to(device)
+#     save_dir = 'models/validate_tcn/'
+#     if not os.path.exists(save_dir):
+#         os.makedirs(save_dir)
+#     if not os.path.exists(hard_frame_save_dir):
+#         os.makedirs(hard_frame_save_dir)
+#     for epoch in range(1, epochs + 1):
+#         if epoch % 30 == 0:
+#             learning_rate = learning_rate * 0.5
+#         model.train()
+#         correct = 0
+#         total = 0
+#         loss_item = 0
+#         optimizer = torch.optim.Adam(model.parameters(), learning_rate, weight_decay=1e-5)
+#         for (video, labels, mask, video_name) in (train_loader):
+#             labels = torch.Tensor(labels).long()
+#             video, labels = video.to(device), labels.to(device)
+#             outputs = model(video)
+# 
+#             loss = 0
+#             for stage, p in enumerate(outputs):
+#                 loss += loss_layer(p.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
+#                 loss += 0.15 * torch.mean(torch.clamp(mse_layer(F.log_softmax(p[:, :, 1:], dim=1), F.log_softmax(p.detach()[:, :, :-1], dim=1)), min=0, max=16))
+# 
+#             loss_item += loss.item()
+#             optimizer.zero_grad()
+#             loss.backward()
+#             optimizer.step()
+# 
+#             _, predicted = torch.max(outputs[-1].data, 1)
+#             correct += ((predicted == labels).sum()).item()
+#             total += labels.shape[0]
+#         print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
+#     
+#     model.eval()
+#     with torch.no_grad():
+#         correct = 0
+#         total = 0
+#         for (video, labels, mask, video_name) in validation_loader:
+#             hard_frame_file = os.path.join(hard_frame_save_dir, video_name[0].split('.')[0] + '.txt')
+#             labels = torch.Tensor(labels).long()
+#             video, labels = video.to(device), labels.to(device)
+#             outputs = model(video)
+#             _, predicted = torch.max(outputs[-1].data, 1)
+#             
+#             correct += ((predicted == labels).sum()).item()
+#             total += labels.shape[0]
+#             
+#             predicted[predicted != labels] = hard_frame_idx
+#             predicted = predicted.squeeze().tolist()
+#             
+#             h_ptr = open(hard_frame_file, "w")
+#             for index, line in enumerate(predicted):
+#                 h_ptr.write('{}\t{}\n'.format(index, line))
+#             h_ptr.close()
+# 
+#         print('Test: Acc {}'.format(correct / total))
+#         
+#     model_path = '_'.join(train_dataset.blacklist)
+#     torch.save(model.state_dict(), save_dir + '{}.model'.format(model_path))
+#     
 
 def test(model, test_loader):
     model.to(device)
@@ -158,14 +172,14 @@ def test(model, test_loader):
     with torch.no_grad():
         correct = 0
         total = 0
-        for (video, labels, mask, video_name) in tqdm(test_loader):
+        for (video, labels, mask, video_name) in (test_loader):
             labels = torch.Tensor(labels).long()
             mask = torch.Tensor(mask).float()
 
             mask = mask.to(device)
             video, labels = video.to(device), labels.to(device)
-            outputs = model(video, mask)
-            _, predicted = torch.max(outputs[-1].data, 1)
+            outputs = model(video)
+            _, predicted = torch.max(outputs[0].data, 1)
             correct += ((predicted == labels).sum()).item()
             total += labels.shape[0]
 
@@ -181,9 +195,11 @@ def predict(model, test_loader, argdataset, sample_rate, results_dir):
             # labels = torch.Tensor(labels).long()
             mask = torch.Tensor(mask).float()
             mask = mask.to(device)
+            
+            zero_one_mask = (mask!=7).to(device).float()
             video = video.to(device)
-            re = model(video, mask)
-            confidence, predicted = torch.max(F.softmax(re[-1].data,1), 1)
+            re = model(video,zero_one_mask)
+            confidence, predicted = torch.max(F.softmax(re[0].data,1), 1)
             predicted = predicted.squeeze(0).tolist()
             labels = [label.item() for label in labels]
             
@@ -191,8 +207,8 @@ def predict(model, test_loader, argdataset, sample_rate, results_dir):
             pic_path = os.path.join(results_dir, pic_file)
             mask = [m.item() for m in mask]
             confidence = confidence.squeeze(0).tolist()
-            segment_bars(pic_path, labels, predicted, mask)
-#             segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted, mask])
+#             segment_bars(pic_path, labels, predicted, mask)
+            segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted, mask])
             
 #             predicted_phases_txt = label2phase(predicted, phase2label_dict=phase2label_dicts[argdataset])
 #             predicted_phases_expand = []
@@ -218,7 +234,7 @@ def predict(model, test_loader, argdataset, sample_rate, results_dir):
 causal_tcn = model.MultiStageCausalTCN(num_stages, num_layers, num_f_maps, dim, num_classes)
 
 if args.action == 'train':
-    video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate)
+    video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, load_hard_frames=True)
     video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
     video_testdataset = VideoDataset('cholec80', 'cholec80/test_dataset', sample_rate)
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
@@ -234,12 +250,13 @@ if args.action == 'test':
 if args.action == 'predict':
     model_path = 'models/tcn/50.model'
     causal_tcn.load_state_dict(torch.load(model_path))
-    video_testdataset =VideoDataset('cholec80', 'cholec80/test_dataset', sample_rate)
+    video_testdataset =VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, load_hard_frames=True)
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
     results_dir = os.path.join(args.dataset, 'eva/test_dataset')
     predict(causal_tcn,video_test_dataloader,args.dataset, sample_rate, results_dir)
     
 if args.action == 'cross_validate':
+    # useless
     kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
     video_list = ['video{0:>2d}'.format(i) for i in range(1,41)]
     for train_idx, test_idx in kf.split(video_list):

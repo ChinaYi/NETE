@@ -29,37 +29,30 @@ class MultiStageCausalTCN(nn.Module):
     def __init__(self, num_stages, num_layers, num_f_maps, dim, num_classes):
         super(MultiStageCausalTCN, self).__init__()
         self.stage1 = SingleStageCausalTCN(num_layers, num_f_maps, dim, num_classes)
-        self.stages = nn.ModuleList([copy.deepcopy(SingleStageCausalTCN(num_layers, num_f_maps, num_classes, num_classes - 1)) for s in range(num_stages-1)])
-        self.dropout = nn.Dropout2d(p=0.5)
-
-    def forward(self, x):
+        self.stages = nn.ModuleList([copy.deepcopy(SingleStageCausalTCN(num_layers, num_f_maps, num_classes, num_classes)) for s in range(num_stages-1)])
+        self.channel_dropout = nn.Dropout2d(p=0.5)
+        
+    def forward(self, x, mask=None):
         # x of shape (bs, L, C_in)
         x = x.permute(0,2,1) # (bs, c, l)
-        #if mask is None:
-        #    x = x.permute(0,2,1) # (bs, l, c)
-        #    x = x.unsqueeze(3) # (bs, l, c, 1)
-        #    x = F.dropout2d(x,p=0.3)
-        #    x = x.squeeze(3)
-        #    x = x.permute(0,2,1) # (bs, c, l)
-        #else:
-        #    x = x*mask
+        if mask is not None:
+            x = x * mask
+        # temporal masking
+#         x = x.permute(0,2,1) # (bs, l, c)
+#         x = x.unsqueeze(3) # (bs, l, c, 1)
+#         x = self.temporal_dropout(x)
+#         x = x.squeeze(3)
+#         x = x.permute(0,2,1) # (bs, c, l)
 
+        # channel masking
         x= x.unsqueeze(3) # of shape (bs, c, l, 1)
-        x = self.dropout(x)
+        x = self.channel_dropout(x)
         x = x.squeeze(3)
 
         out = self.stage1(x)
         outputs = out.unsqueeze(0)
         for s in self.stages:
-            out = s(F.softmax(out, dim=1)) # bs x c_in x l_in
-#             if mask is None:
-#                 out = out.permute(0,2,1)
-#                 out = out.unsqueeze(3)
-#                 out = F.dropout2d(out, p=0.4)
-#                 out = out.squeeze(3)
-#                 out = out.permute(0,2,1)
-#             else:
-#                 our = out * mask    
+            out = s(F.softmax(out, dim=1)) # bs x c_in x l_in   
             outputs = torch.cat((outputs, out.unsqueeze(0)), dim=0)
         return outputs
 

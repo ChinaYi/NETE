@@ -5,7 +5,8 @@ import os
 import numpy as np
 
 phase2label_dicts = {
-    'cholec80':{'Preparation':0,
+    'cholec80':{
+    'Preparation':0,
     'CalotTriangleDissection':1,
     'ClippingCutting':2,
     'GallbladderDissection':3,
@@ -16,23 +17,26 @@ phase2label_dicts = {
 
 
 def phase2label(phases, phase2label_dict):
-    labels = [phase2label_dict[phase] for phase in phases]
+    labels = [phase2label_dict[phase] if phase in phase2label_dict.keys() else 7 for phase in phases]
     return labels
 
 def label2phase(labels, phase2label_dict):
     label2phase_dict = {phase2label_dict[k]:k for k in phase2label_dict.keys()}
-    phases = [label2phase_dict[label] for label in labels]
+    phases = [label2phase_dict[label] if label in label2phase_dict.keys() else 'HardFrame' for label in labels]
     return phases
 
 class FramewiseDataset(Dataset):
-    def __init__(self, dataset, root):
+    def __init__(self, dataset, root, label_folder='annotation_folder', video_folder='image_folder', blacklist=[]):
         self.dataset = dataset
+        self.blacklist= blacklist
         self.imgs = []
         self.labels = []
 
-        label_folder = os.path.join(root, 'annotation_folder')
-        video_folder = os.path.join(root, 'image_folder')
+        label_folder = os.path.join(root, label_folder)
+        video_folder = os.path.join(root, video_folder)
         for v in os.listdir(video_folder):
+            if v in blacklist:
+                continue
             v_abs_path = os.path.join(video_folder, v)
             v_label_file_abs_path = os.path.join(label_folder, v + '.txt')
             labels = self.read_labels(v_label_file_abs_path)
@@ -67,7 +71,7 @@ class FramewiseDataset(Dataset):
         return labels
 
 class VideoDataset(Dataset):
-    def __init__(self, dataset, root, sample_rate, blacklist=[], load_hard_frames = False):
+    def __init__(self, dataset, root, sample_rate, blacklist=[], load_hard_frames=False):
         self.dataset = dataset
         self.sample_rate = sample_rate
         self.blacklist = blacklist # for cross-validate
@@ -77,9 +81,9 @@ class VideoDataset(Dataset):
         self.video_names = []
         self.hard_frame_index = 7 if dataset == 'cholec80' else 8
 
-        video_feature_folder = os.path.join(root, 'video_feature_folder')
+        video_feature_folder = os.path.join(root, 'video_feature@2019')
         label_folder = os.path.join(root, 'annotation_folder')
-        hard_frames_folder = os.path.join(root, 'hard_frames')
+        hard_frames_folder = os.path.join(root, 'hard_frames@2020')
         for v_f in os.listdir(video_feature_folder):
             if v_f.split('.')[0] in blacklist:
                 continue
@@ -92,6 +96,7 @@ class VideoDataset(Dataset):
             videos = np.load(v_f_abs_path)[::sample_rate,]
             if load_hard_frames:
                 masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
+                masks = masks[::sample_rate]
             else:
                 masks = labels[::]
             assert len(labels) == len(masks)
@@ -118,12 +123,14 @@ class VideoDataset(Dataset):
 
     def read_hard_frames(self, hard_frame_file, hard_frame_index):
         with open(hard_frame_file, 'r') as f:
-            labels = [int(line.strip().split('\t')[1]) for line in f.readlines()]
+            phases = [line.strip().split('\t')[1] for line in f.readlines()]
+            labels = phase2label(phases, phase2label_dicts[self.dataset])
+        return labels
+         
 #         masks = np.array(labels)
 #         masks[masks != hard_frame_index] = 1
 #         masks[masks == hard_frame_index] = 0
 #         return masks.tolist()
-        return labels
 
 if __name__ == '__main__':
     '''

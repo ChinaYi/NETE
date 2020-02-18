@@ -25,7 +25,7 @@ def segment_bars(save_path, *labels):
 
 
 def segment_bars_with_confidence_score(save_path, confidence_score, labels=[]):
-    num_pics = len(labels) + len(confidence_scores)
+    num_pics = len(labels) + 1
     color_map = plt.cm.tab10
 
     axprops = dict(xticks=[], yticks=[], frameon=False)
@@ -34,15 +34,18 @@ def segment_bars_with_confidence_score(save_path, confidence_score, labels=[]):
     fig = plt.figure(figsize=(15, num_pics * 1.5))
 
     interval = 1 / (num_pics+1)
+    axes = []
     for i, label in enumerate(labels):
         i = i + 1
-        ax1 = fig.add_axes([0, 1-i*interval, 1, interval])
-        ax1.imshow([label], **barprops)
+        axes.append(fig.add_axes([0, 1-i*interval, 1, interval]))
+#         ax1.imshow([label], **barprops)
+    for i, label in enumerate(labels):
+        axes[i].imshow([label], **barprops)
     
-    ax4 = fig.add_axes([0, 1- i * interval, 1, interval])
-    ax4.set_xlim(0, len(confidence_score))
-    ax4.set_ylim(0, 1)
-    ax4.plot(range(len(confidence_score)), confidence_score)
+    ax99 = fig.add_axes([0, 1- (i+2) * interval, 1, interval])
+    ax99.set_xlim(0, len(confidence_score))
+    ax99.set_ylim(0, 1)
+    ax99.plot(range(len(confidence_score)), confidence_score)
 
     if save_path is not None:
         plt.savefig(save_path)
