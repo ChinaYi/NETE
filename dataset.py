@@ -125,12 +125,12 @@ class VideoDataset(Dataset):
         with open(hard_frame_file, 'r') as f:
             phases = [line.strip().split('\t')[1] for line in f.readlines()]
             labels = phase2label(phases, phase2label_dicts[self.dataset])
-        return labels
+#         return labels
          
-#         masks = np.array(labels)
-#         masks[masks != hard_frame_index] = 1
-#         masks[masks == hard_frame_index] = 0
-#         return masks.tolist()
+        masks = np.array(labels)
+        masks[masks != hard_frame_index] = 1
+        masks[masks == hard_frame_index] = 0
+        return masks.tolist()
 
 if __name__ == '__main__':
     '''

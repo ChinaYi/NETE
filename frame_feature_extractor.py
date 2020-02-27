@@ -177,8 +177,8 @@ if __name__ == '__main__':
         framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=False, drop_last=False)
     
-        extract(inception, framewise_test_dataloader, 'cholec80/test_dataset/feature_folder/')
-        imgf2videof('cholec80/test_dataset/feature_folder/', 'cholec80/test_dataset/video_feature_folder/')
+        extract(inception, framewise_test_dataloader, 'cholec80/test_dataset/frame_feature@2019/')
+        imgf2videof('cholec80/test_dataset/frame_feature@2019/', 'cholec80/test_dataset/video_feature@2019/')
     
     if args.action == 'cross_validate':
         kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
@@ -198,33 +198,35 @@ if __name__ == '__main__':
             framewise_traindataset = dataset.FramewiseDataset('cholec80', 'cholec80/train_dataset', blacklist=testlist)
             framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/train_dataset', blacklist=trainlist)
             
-            framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=64, shuffle=True, drop_last=False)
+            framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=1, shuffle=True, drop_last=False)
             framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=True, drop_last=False)
             
             model_save_dir = 'models/cross_validate/' + '_'.join(testlist)
             print('Cross Validate {}, save dir '.format(k) + model_save_dir)
 #             train(inception, model_save_dir , framewise_train_dataloader, framewise_test_dataloader)
             inception.load_state_dict(torch.load(model_save_dir + '/3.model'))
-            print('Training Done! Extract feature to cholec80/train_dataset/frame_feature@2020/')
-            err_dict = extract(inception, framewise_test_dataloader, 'cholec80/train_dataset/frame_feature@2020/', True)
-            print('Make Hard Frame files at cholec80/train_dataset/hard_frames@2020/')
-            
-            if not os.path.exists('cholec80/train_dataset/hard_frames@2020'):
-                os.makedirs('cholec80/train_dataset/hard_frames@2020')
-            for video in testlist:
-                anno_file = 'cholec80/train_dataset/annotation_folder/{}.txt'.format(video)
-                hard_frame_file = 'cholec80/train_dataset/hard_frames@2020/{}.txt'.format(video)
-                with open(anno_file, 'r') as f:
-                    gt_lines = f.readlines()
-                for err_img in err_dict[video]:
-                    ori = gt_lines[err_img]
-                    idx, _ = ori.split('\t')
-                    assert int(idx) == err_img
-                    phase_txt = 'HardFrame\n'
-                    gt_lines[err_img] = idx + '\t' + phase_txt
-                with open(hard_frame_file, 'w') as f:
-                    for line in gt_lines:
-                        f.write(line)
+            extaction_path = 'cholec80/train_dataset/corss_validate@2020/{}/'.format(k)
+            print('Training Done! Extract feature to {}'.format(extaction_path))
+            extract(inception, framewise_train_dataloader,extaction_path , False)
+#             err_dict = extract(inception, framewise_test_dataloader, 'cholec80/train_dataset/frame_feature@2020/', True)
+#             print('Make Hard Frame files at cholec80/train_dataset/hard_frames@2020/')
+#             
+#             if not os.path.exists('cholec80/train_dataset/hard_frames@2020'):
+#                 os.makedirs('cholec80/train_dataset/hard_frames@2020')
+#             for video in testlist:
+#                 anno_file = 'cholec80/train_dataset/annotation_folder/{}.txt'.format(video)
+#                 hard_frame_file = 'cholec80/train_dataset/hard_frames@2020/{}.txt'.format(video)
+#                 with open(anno_file, 'r') as f:
+#                     gt_lines = f.readlines()
+#                 for err_img in err_dict[video]:
+#                     ori = gt_lines[err_img]
+#                     idx, _ = ori.split('\t')
+#                     assert int(idx) == err_img
+#                     phase_txt = 'HardFrame\n'
+#                     gt_lines[err_img] = idx + '\t' + phase_txt
+#                 with open(hard_frame_file, 'w') as f:
+#                     for line in gt_lines:
+#                         f.write(line)
         
         
     if args.action == 'test_hard_frame':
@@ -238,11 +240,13 @@ if __name__ == '__main__':
     
         framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=False, drop_last=False)
-    
-        train(inception, 'models/inceptionv3_w_hard',framewise_train_dataloader, framewise_test_dataloader)
+        
+        inception.load_state_dict(torch.load('models/inceptionv3_w_hard/3.model'))
+#         train(inception, 'models/inceptionv3_w_hard',framewise_train_dataloader, framewise_test_dataloader)
         
         print('Training Done! Detect hard frames in test dataset')
-        model.eval()
+        inception.eval()
+        inception.to(device)
         
         hard_frame_dict = {}
         with torch.no_grad():
@@ -261,6 +265,9 @@ if __name__ == '__main__':
                     else:
                         hard_frame_dict[video].append(int(img_in_video.split('.')[0]))
         
+        import pickle
+        f_ptr = open('hard_frame_dict.pkl','wb')
+        pickle.dump(hard_frame_dict, f_ptr)
         testlist = ['video{:0>2d}'.format(i) for i in range(41,81)]
         for video in testlist:
             anno_file = 'cholec80/test_dataset/annotation_folder/{}.txt'.format(video)
@@ -272,7 +279,7 @@ if __name__ == '__main__':
                 idx, _ = ori.split('\t')
                 assert int(idx) == hard_frame
                 phase_txt = 'HardFrame\n'
-                gt_lines[err_img] = idx + '\t' + phase_txt
+                gt_lines[hard_frame] = idx + '\t' + phase_txt
             with open(hard_frame_file, 'w') as f:
                 for line in gt_lines:
                     f.write(line)
