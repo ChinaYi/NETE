@@ -12,8 +12,48 @@ phase2label_dicts = {
     'GallbladderDissection':3,
     'GallbladderPackaging':4,
     'CleaningCoagulation':5,
+    'GallbladderRetraction':6},
+    
+    'm2cai16':{
+    'Preparation':0,
+    'CalotTriangleDissection':1,
+    'ClippingCutting':2,
+    'GallbladderDissection':3,
+    'GallbladderPackaging':4,
+    'CleaningCoagulation':5,
     'GallbladderRetraction':6}
 }
+
+
+transtion_prior_matrix = [
+    [1,1,0,0,0,0,0],
+    [0,1,1,0,0,0,0],
+    [0,0,1,1,0,0,0],
+    [0,0,0,1,1,1,0],
+    [0,0,0,0,1,1,1],
+    [0,0,0,0,1,1,1],
+    [0,0,0,0,0,1,1],    
+]
+
+# transtion_prior_matrix = [
+#     [1,1,0,0,0,0,0],
+#     [1,1,1,1,0,0,0],
+#     [0,1,1,1,0,0,0],
+#     [0,0,1,1,1,1,0],
+#     [0,0,0,1,1,1,1],
+#     [0,0,0,1,1,1,1],
+#     [0,0,0,0,1,1,1],    
+# ]
+
+# transtion_prior_matrix = [
+#     [1,1,1,0,0,0,0],
+#     [1,1,1,0,0,0,0],
+#     [1,1,1,0,0,0,0],
+#     [0,0,1,1,1,1,1],
+#     [0,0,0,1,1,1,1],
+#     [0,0,0,1,1,1,1],
+#     [0,0,0,1,1,1,1],    
+# ]
 
 
 def phase2label(phases, phase2label_dict):
@@ -71,7 +111,7 @@ class FramewiseDataset(Dataset):
         return labels
 
 class VideoDataset(Dataset):
-    def __init__(self, dataset, root, sample_rate, blacklist=[], load_hard_frames=False):
+    def __init__(self, dataset, root, sample_rate, video_feature_folder, blacklist=[], load_hard_frames=False):
         self.dataset = dataset
         self.sample_rate = sample_rate
         self.blacklist = blacklist # for cross-validate
@@ -81,7 +121,7 @@ class VideoDataset(Dataset):
         self.video_names = []
         self.hard_frame_index = 7 if dataset == 'cholec80' else 8
 
-        video_feature_folder = os.path.join(root, 'video_feature@2019')
+        video_feature_folder = os.path.join(root, video_feature_folder)
         label_folder = os.path.join(root, 'annotation_folder')
         hard_frames_folder = os.path.join(root, 'hard_frames@2020')
         for v_f in os.listdir(video_feature_folder):
@@ -131,7 +171,15 @@ class VideoDataset(Dataset):
         masks[masks != hard_frame_index] = 1
         masks[masks == hard_frame_index] = 0
         return masks.tolist()
-
+    
+    def merge(self, videodataset_a):
+        self.videos += videodataset_a.videos
+        self.labels += videodataset_a.labels
+        self.hard_frames += videodataset_a.hard_frames
+        self.video_names += videodataset_a.video_names
+        
+        print('After merge: ', self.__len__())
+        
 if __name__ == '__main__':
     '''
         UNIT TEST

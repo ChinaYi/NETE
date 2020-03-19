@@ -156,29 +156,29 @@ if __name__ == '__main__':
     if args.action == 'train':
         # 
         
-        framewise_traindataset = dataset.FramewiseDataset('cholec80', 'cholec80/train_dataset')
+        framewise_traindataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset))
         framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=64, shuffle=True, drop_last=False)
     
-        framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
+        framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/test_dataset'.format(args.dataset))
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=64, shuffle=True, drop_last=False)
     
-        train( inception, 'models/inceptionv3',framewise_train_dataloader, framewise_test_dataloader)
+        train( inception, 'models/{}/inceptionv3'.format(args.dataset), framewise_train_dataloader, framewise_test_dataloader)
     
     if args.action == 'test':
-        model_path = 'models/inceptionv3/2.model'
+        model_path = 'models/{}/inceptionv3/3.model'.format(args.dataset)
         inception.load_state_dict(torch.load(model_path))
-        framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
+        framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/test_dataset'.format(args.dataset))
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=64, shuffle=True, drop_last=False)
         test(inception, framewise_test_dataloader)
     
     if args.action == 'extract':
-        model_path = 'models/inceptionv3/2.model'
+        model_path = 'models/{}/inceptionv3/3.model'.format(args.dataset)
         inception.load_state_dict(torch.load(model_path))
-        framewise_testdataset = dataset.FramewiseDataset('cholec80', 'cholec80/test_dataset')
+        framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset))
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=False, drop_last=False)
     
-        extract(inception, framewise_test_dataloader, 'cholec80/test_dataset/frame_feature@2019/')
-        imgf2videof('cholec80/test_dataset/frame_feature@2019/', 'cholec80/test_dataset/video_feature@2019/')
+        extract(inception, framewise_test_dataloader, '{}/train_dataset/frame_feature@2020/'.format(args.dataset))
+        imgf2videof('{}/train_dataset/frame_feature@2020/'.format(args.dataset), '{}/train_dataset/video_feature@2020/'.format(args.dataset))
     
     if args.action == 'cross_validate':
         kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
@@ -201,7 +201,7 @@ if __name__ == '__main__':
             framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=1, shuffle=True, drop_last=False)
             framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=True, drop_last=False)
             
-            model_save_dir = 'models/cross_validate/' + '_'.join(testlist)
+            model_save_dir = 'models/cross_validate/inceptionv3/' + '_'.join(testlist)
             print('Cross Validate {}, save dir '.format(k) + model_save_dir)
 #             train(inception, model_save_dir , framewise_train_dataloader, framewise_test_dataloader)
             inception.load_state_dict(torch.load(model_save_dir + '/3.model'))
