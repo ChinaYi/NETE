@@ -33,5 +33,3 @@ We also provide the code for extract inceptionv3 features for video frames and f
 python frame_feature_extractor --action=train/extract
 python frame_feature_extractor --action=hard_frame
 ```
-```
-
