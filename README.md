@@ -30,6 +30,8 @@ python main.py --action=random_mask_type
 
 We also provide the code for extract inceptionv3 features for video frames and find out hard frames in the dataset. Again, this is not a necessary step.   
 ```
-python frame_feature_extractor --action=train/extract
-python frame_feature_extractor --action=hard_frame
+python frame_feature_extractor --action=train --dataset=cholec80
+python frame_feature_extractor --action=extract --dataset=cholec80 --target=train_set/test_set
+python frame_feature_extractor --action=hard_frame --dataset=cholec80 --target=train_set --k=0/1/2.../9
+python frame_feature_extractor --action=hard_frame --dataset=cholec80 --target=test_set
 ```
