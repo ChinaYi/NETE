@@ -220,7 +220,7 @@ if __name__ == '__main__':
             framewise_traindataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), blacklist=testlist)
             framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), blacklist=trainlist)
             
-            framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=1, shuffle=True, drop_last=False)
+            framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=64, shuffle=True, drop_last=False)
             framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=True, drop_last=False)
             
             model_save_dir = 'models/{}/cross_validate/inceptionv3/'.format(args.dataset) + '_'.join(testlist)
