@@ -32,8 +32,8 @@ torch.backends.cudnn.deterministic = True
 parser = argparse.ArgumentParser()
 parser.add_argument('--action', choices=['train', 'extract', 'test', 'hard_frame'], default='train')
 parser.add_argument('--dataset', default="cholec80", choices=['cholec80','m2cai16'])
-parser.add_argument('--k', type=int, default=-100)
 parser.add_argument('--target', type=str, default='train_set')
+parser.add_argument('--k', type=int, default=-100)
 args = parser.parse_args()
 
 learning_rate = 1e-4
@@ -167,19 +167,19 @@ if __name__ == '__main__':
         framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/test_dataset'.format(args.dataset))
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=64, shuffle=True, drop_last=False)
     
-        train( inception, 'models/inceptionv3', framewise_train_dataloader, framewise_test_dataloader)
+        train( inception, 'models/{}/inceptionv3'.format(args.dataset), framewise_train_dataloader, framewise_test_dataloader)
     
     if args.action == 'test':
-        model_path = 'saved_models/inceptionv3/inceptionv3.model' # use the saved model
-#         model_path = 'models/inceptionv3/2.model' # use your own model
+        model_path = 'saved_models/{}/inceptionv3/inceptionv3.model'.format(args.dataset) # use the saved model
+#         model_path = 'models/{}/inceptionv3/2.model'.format(args.dataset) # use your own model
         inception.load_state_dict(torch.load(model_path))
         framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/test_dataset'.format(args.dataset))
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=64, shuffle=True, drop_last=False)
         test(inception, framewise_test_dataloader)
     
     if args.action == 'extract': # extract inception feature
-        model_path = 'saved_models/inceptionv3/inceptionv3.model' # use the saved model
-#         model_path = 'models/inceptionv3/2.model' # use your own model
+        model_path = 'saved_models/{}/inceptionv3/inceptionv3.model'.format(args.dataset) # use the saved model
+#         model_path = 'models/{}/inceptionv3/2.model'.format(args.dataset) # use your own model
         inception.load_state_dict(torch.load(model_path))
         
         if args.target == 'train_set':
@@ -198,9 +198,9 @@ if __name__ == '__main__':
     if args.action == 'hard_frame' and args.target == 'train_set':
         kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
         if args.dataset == 'cholec80':
-            video_list = ['video{0:>2d}'.format(i) for i in range(1,41)]
+            video_list = ['video{:0>2d}'.format(i) for i in range(1,41)]
         elif args.dataset == 'm2cai16':
-            video_list = ['workflow_video_{0:>2d}'.format(i) for i in range(1, 28)]
+            video_list = ['workflow_video_{:0>2d}'.format(i) for i in range(1, 28)]
         for k, (train_idx, test_idx) in enumerate(kf.split(video_list)):
             if args.k != -100:
                 if k != args.k:
@@ -214,8 +214,8 @@ if __name__ == '__main__':
                 trainlist = ['video{:0>2d}'.format(i+1) for i in train_idx]
                 testlist = ['video{:0>2d}'.format(i+1) for i in test_idx]
             elif args.dataset == 'm2cai16':
-                trainlist = ['workflow_video_{0:>2d}'.format(i+1) for i in train_idx]
-                testlist = ['workflow_video_{0:>2d}'.format(i+1) for i in test_idx]
+                trainlist = ['workflow_video_{:0>2d}'.format(i+1) for i in train_idx]
+                testlist = ['workflow_video_{:0>2d}'.format(i+1) for i in test_idx]
             
             framewise_traindataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), blacklist=testlist)
             framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), blacklist=trainlist)
@@ -234,8 +234,7 @@ if __name__ == '__main__':
 
             extaction_path = '{}/train_dataset/corss_validate@2020/{}/'.format(args.dataset, k)
             print('Training Done! Extract feature to {}'.format(extaction_path))
-#             extract(inception, framewise_train_dataloader, extaction_path , False)
-            err_dict = extract(inception, framewise_test_dataloader, '{}/train_dataset/frame_feature@2020/'.format(args.dataset), True)
+            err_dict = extract(inception, framewise_test_dataloader, extaction_path, True)
             print('Make Hard Frame files at {}/train_dataset/hard_frames@2020/'.format(args.dataset))
              
             if not os.path.exists('{}/train_dataset/hard_frames@2020'.format(args.dataset)):
@@ -263,7 +262,7 @@ if __name__ == '__main__':
         inception.fc = nn.Linear(fc_features, len(dataset.phase2label_dicts[args.dataset]) + 1) # plus HardFrame
         
         
-        framewise_traindataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 'hard_frames@2020')
+        framewise_traindataset = dataset.FramewiseDataset(args.dataset, '{}/train_dataset'.format(args.dataset), label_folder = 'hard_frames@2020')
         framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=64, shuffle=True, drop_last=False)
     
         framewise_testdataset = dataset.FramewiseDataset(args.dataset, '{}/test_dataset'.format(args.dataset))
@@ -295,7 +294,7 @@ if __name__ == '__main__':
                         hard_frame_dict[video].append(int(img_in_video.split('.')[0]))
         
 #         import pickle
-#         f_ptr = open('hard_frame_dict.pkl','wb')
+#         f_ptr = open('hard_frame_test_dict.pkl','wb')
 #         pickle.dump(hard_frame_dict, f_ptr)
         
         if args.dataset == 'cholec80':
@@ -316,6 +315,7 @@ if __name__ == '__main__':
             with open(hard_frame_file, 'w') as f:
                 for line in gt_lines:
                     f.write(line)
+    
         
     
         

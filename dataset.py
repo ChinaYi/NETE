@@ -15,13 +15,23 @@ phase2label_dicts = {
     'GallbladderRetraction':6},
     
     'm2cai16':{
-    'Preparation':0,
-    'CalotTriangleDissection':1,
-    'ClippingCutting':2,
-    'GallbladderDissection':3,
-    'GallbladderPackaging':4,
-    'CleaningCoagulation':5,
-    'GallbladderRetraction':6}
+    'TrocarPlacement':0,
+    'Preparation':1,
+    'CalotTriangleDissection':2,
+    'ClippingCutting':3,
+    'GallbladderDissection':4,
+    'GallbladderPackaging':5,
+    'CleaningCoagulation':6,
+    'GallbladderRetraction':7}
+    
+#     'm2cai16':{
+#     'Preparation':0,
+#     'CalotTriangleDissection':1,
+#     'ClippingCutting':2,
+#     'GallbladderDissection':3,
+#     'GallbladderPackaging':4,
+#     'CleaningCoagulation':5,
+#     'GallbladderRetraction':6}
 }
 
 
@@ -57,7 +67,7 @@ transtion_prior_matrix = [
 
 
 def phase2label(phases, phase2label_dict):
-    labels = [phase2label_dict[phase] if phase in phase2label_dict.keys() else 7 for phase in phases]
+    labels = [phase2label_dict[phase] if phase in phase2label_dict.keys() else len(phase2label_dict) for phase in phases]
     return labels
 
 def label2phase(labels, phase2label_dict):
@@ -111,7 +121,7 @@ class FramewiseDataset(Dataset):
         return labels
 
 class VideoDataset(Dataset):
-    def __init__(self, dataset, root, sample_rate, video_feature_folder, blacklist=[], load_hard_frames=False):
+    def __init__(self, dataset, root, sample_rate, video_feature_folder, blacklist=[]):
         self.dataset = dataset
         self.sample_rate = sample_rate
         self.blacklist = blacklist # for cross-validate
@@ -119,7 +129,7 @@ class VideoDataset(Dataset):
         self.labels = []
         self.hard_frames = []
         self.video_names = []
-        self.hard_frame_index = 7 if dataset == 'cholec80' else 8
+        self.hard_frame_index = 7 
 
         video_feature_folder = os.path.join(root, video_feature_folder)
         label_folder = os.path.join(root, 'annotation_folder')
@@ -134,11 +144,8 @@ class VideoDataset(Dataset):
             
             labels = labels[::sample_rate]
             videos = np.load(v_f_abs_path)[::sample_rate,]
-            if load_hard_frames:
-                masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
-                masks = masks[::sample_rate]
-            else:
-                masks = labels[::]
+            masks = self.read_hard_frames(v_hard_frame_abs_path,  self.hard_frame_index)
+            masks = masks[::sample_rate]
             assert len(labels) == len(masks)
 
             self.videos.append(videos)
