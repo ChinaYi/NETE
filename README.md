@@ -11,6 +11,8 @@ Download the trained models at https://disk.pku.edu.cn:443/link/43DE87ACD388496F
 python main.py --action=base_predict
 python main.py --action=refine_predict
 ```
+
+Evaluation code is obtained in the dataset. (cholec80/eva/Main.m).
 You will get Acc=88.7% and 92.6%, respectively.
 
 ## Train the model with your own settings
