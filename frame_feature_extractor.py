@@ -139,6 +139,7 @@ def imgf2videof(source_folder, target_folder):
     if not os.path.exists(target_folder):
         os.makedirs(target_folder)
     for video in os.listdir(source_folder):
+        video_feature_save_path = os.path.join(target_folder, video + '.npy')
         video_abs_path = os.path.join(source_folder, video)
         nums_of_imgs = len(os.listdir(video_abs_path))
         video_feature = []
@@ -147,7 +148,7 @@ def imgf2videof(source_folder, target_folder):
             video_feature.append(np.load(img_abs_path))
 
         video_feature = np.concatenate(video_feature, axis=0)
-        video_feature_save_path = os.path.join(target_folder, video + '.npy')
+        
         np.save(video_feature_save_path, video_feature)
         print('{} done!'.format(video))
 
@@ -232,9 +233,18 @@ if __name__ == '__main__':
             
 #             train(inception, model_save_dir , framewise_train_dataloader, framewise_test_dataloader) # train your model
 
-            extaction_path = '{}/train_dataset/corss_validate@2020/{}/'.format(args.dataset, k)
-            print('Training Done! Extract feature to {}'.format(extaction_path))
-            err_dict = extract(inception, framewise_test_dataloader, extaction_path, True)
+            test_extraction_path = '{}/train_dataset/cross_validate_frame_feature_for_validatation@2020/'.format(args.dataset)
+            train_extraction_path = '{}/train_dataset/cross_validate_frame_feature@2020/{}/'.format(args.dataset, '_'.join(testlist))
+            
+            print('Training Done! Extract feature to {} and {}'.format(test_extraction_path, train_extraction_path))
+            
+            framewise_train_dataloader = DataLoader(framewise_traindataset, batch_size=1, shuffle=True, drop_last=False)
+            extract(inception, framewise_train_dataloader, train_extraction_path, False)
+            imgf2videof(train_extraction_path, '{}/train_dataset/cross_validate_video_feature@2020/{}/'.format(args.dataset, '_'.join(testlist)))
+            err_dict = extract(inception, framewise_test_dataloader, test_extraction_path, True)
+            imgf2videof(test_extraction_path, '{}/train_dataset/cross_validate_video_feature_for_validation@2020/'.format(args.dataset))
+            
+            
             print('Make Hard Frame files at {}/train_dataset/hard_frames@2020/'.format(args.dataset))
              
             if not os.path.exists('{}/train_dataset/hard_frames@2020'.format(args.dataset)):
@@ -257,6 +267,7 @@ if __name__ == '__main__':
         
     if args.action == 'hard_frame' and args.target == 'test_set':
         negative_index = 8 if args.dataset=='m2cai16' else 7
+        print('hard frame index: ', negative_index)
         inception = inception_v3(pretrained=True, aux_logits=False)
         fc_features = inception.fc.in_features
         inception.fc = nn.Linear(fc_features, len(dataset.phase2label_dicts[args.dataset]) + 1) # plus HardFrame
@@ -269,7 +280,7 @@ if __name__ == '__main__':
         framewise_test_dataloader = DataLoader(framewise_testdataset, batch_size=1, shuffle=False, drop_last=False)
         
         inception.load_state_dict(torch.load('saved_models/{}/inceptionv3_w_hard/inceptionv3.model'.format(args.dataset))) # load saved model
-#         inception.load_state_dict(torch.load('models/{}/inceptionv3_w_hard/3.model'.format(args.dataset)) # load your model
+#         inception.load_state_dict(torch.load('models/{}/inceptionv3_w_hard/3.model'.format(args.dataset))) # load your model
 #         train(inception, 'models/{}/inceptionv3_w_hard'.format(args.dataset),framewise_train_dataloader, framewise_test_dataloader) # train your model
         
         print('Training Done! Detect hard frames in test dataset')
@@ -296,6 +307,9 @@ if __name__ == '__main__':
 #         import pickle
 #         f_ptr = open('hard_frame_test_dict.pkl','wb')
 #         pickle.dump(hard_frame_dict, f_ptr)
+        
+        if not os.path.exists('{}/test_dataset/hard_frames@2020'.format(args.dataset)):
+            os.makedirs('{}/test_dataset/hard_frames@2020'.format(args.dataset))
         
         if args.dataset == 'cholec80':
             testlist = ['video{:0>2d}'.format(i) for i in range(41,81)]

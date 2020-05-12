@@ -47,11 +47,9 @@ dim = 2048
 sample_rate = args.sample_rate
 num_classes = len(phase2label_dicts[args.dataset])
 
-    
-
-def refine_train(base_model, refine_model, train_loader, validation_loader, save_dir='models/refine_model/'):
+def refine_train(base_model, refine_model, train_loader, validation_loader, save_dir='models/refine_gru/', debug=False):
     global learning_rate
-    epochs = 100
+    epochs = 31
     mse_layer = nn.MSELoss(reduction='none')
     
     base_model.to(device)
@@ -68,7 +66,7 @@ def refine_train(base_model, refine_model, train_loader, validation_loader, save
         total = 0
         correct = 0
         loss_item = 0
-        optimizer = torch.optim.Adam(refine_model.parameters(), learning_rate*10)
+        optimizer = torch.optim.Adam(refine_model.parameters(), learning_rate*10) # 10 50
         for (video, labels, mask, video_name) in (train_loader):
             ## labels is two times longer than video
             labels = labels[::sample_rate]
@@ -77,14 +75,11 @@ def refine_train(base_model, refine_model, train_loader, validation_loader, save
             video, labels = video.to(device), labels.to(device)
             mask = mask.to(device)
             
-            
             outputs, _ = refine_model(video)
             
             loss = 0
             for output in outputs:
                 loss += loss_layer(output.view(-1, num_classes), labels.view(-1))
-#                 loss += 0.5 * torch.mean(torch.clamp(mse_layer(F.log_softmax(output[:, 1:, :], dim=2), F.log_softmax(output.detach()[:, :-1, :], dim=2)), min=0, max=16))
-            
             loss_item += loss.item()
             
             optimizer.zero_grad()
@@ -97,7 +92,8 @@ def refine_train(base_model, refine_model, train_loader, validation_loader, save
             
 
         print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
-        refine_test(base_model, refine_model, validation_loader)
+        if debug:
+            refine_test(base_model, refine_model, validation_loader)
         torch.save(refine_model.state_dict(), save_dir + '/{}.model'.format(epoch))
 
 
@@ -115,9 +111,8 @@ def refine_test(base_model, refine_model, test_loader):
             mask = torch.Tensor(mask).float()
             video, labels = video.to(device), labels.to(device)
             mask = mask.to(device)
-#             outputs1 = base_model(video)
             outputs1 = base_model(video, mask)
-#             outputs1 = F.softmax(outputs1, dim=1)
+
             outputs1 = outputs1.permute(0,2,1)
             outputs2, _ = refine_model(outputs1)
             
@@ -128,7 +123,7 @@ def refine_test(base_model, refine_model, test_loader):
             correct2 += ((predicted2== labels).sum()).item()
             total += labels.shape[0]
 
-        print('Test: Acc1 {}, Acc2 {}'.format(correct1 / total, correct2/total))
+        print('Test: Base model Acc {}, Prior Model Acc {}'.format(correct1 / total, correct2/total))
     
 
 def refine_predict(base_model, refine_model, test_loader):
@@ -137,9 +132,8 @@ def refine_predict(base_model, refine_model, test_loader):
     base_model.to(device)
     refine_model.to(device)
     
-    pic_save_dir = 'results/refine_vis/'
-    results_dir = 'cholec80/eva/test_dataset/'
-#     results_dir = 'm2cai16/eva/test_dataset' # for m2cai16
+    pic_save_dir = 'results/{}/refine_vis/'.format(args.dataset)
+    results_dir = '{}/eva/test_dataset/'.format(args.dataset)
     if not os.path.exists(pic_save_dir):
         os.makedirs(pic_save_dir)    
     with torch.no_grad():
@@ -147,10 +141,24 @@ def refine_predict(base_model, refine_model, test_loader):
             video = video.to(device)
             mask = torch.Tensor(mask).float()
             mask = mask.to(device)
+
+            base_model_output = base_model(video, mask)
+
             
-#             labels = labels[::sample_rate]
-#             outputs, _ = refine_model(video)
-            outputs, _ = refine_model(base_model(video, mask).permute(0,2,1))
+            ###
+            confidence, base_predicted = torch.max(F.softmax(base_model_output.data,1), 1)
+            base_predicted = base_predicted.squeeze(0).tolist()
+            confidence = confidence.squeeze(0).tolist()
+             
+ 
+#             alpha = 3
+#             beta = 0.95
+#             gamma = 30            
+#             pki_predicted = PKI(confidence, base_predicted, transtion_prior_matrix, alpha, beta, gamma)
+            
+            
+            
+            outputs, _ = refine_model(base_model_output.permute(0,2,1))
             confidence, predicted = torch.max(F.softmax(outputs[-1].data,2), 2)
             predicted = predicted.squeeze(0).tolist()
             labels = [label.item() for label in labels]
@@ -159,10 +167,9 @@ def refine_predict(base_model, refine_model, test_loader):
             pic_path = os.path.join(pic_save_dir, pic_file)
             mask = [m.item() for m in mask]
             confidence = confidence.squeeze(0).tolist()
-            
-            
-#             segment_bars(pic_path, labels, predicted, mask)
-#             segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted, mask])
+             
+#             segment_bars(pic_path, labels, base_predicted, pki_predicted, predicted)
+            segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, base_predicted, predicted])
             
             predicted_phases_txt = label2phase(predicted, phase2label_dict=phase2label_dicts[args.dataset])
             predicted_phases_expand = []
@@ -171,8 +178,11 @@ def refine_predict(base_model, refine_model, test_loader):
  
  
             target_video_file = video_name[0].split('.')[0] + '_pred.txt'
-            gt_file = video_name[0].split('.')[0] + '-phase.txt'
-#             gt_file = video_name[0].split('.')[0] + '.txt' # for m2cai16
+            if args.dataset == 'cholec80':
+                gt_file = video_name[0].split('.')[0] + '-phase.txt'
+            if args.dataset == 'm2cai16':
+                gt_file = video_name[0].split('.')[0] + '.txt'
+                
 
  
             g_ptr = open(os.path.join(results_dir, gt_file), "r")
@@ -186,9 +196,10 @@ def refine_predict(base_model, refine_model, test_loader):
             for index, line in enumerate(predicted_phases_expand):
                 f_ptr.write('{}\t{}\n'.format(index, line))
             f_ptr.close()
+
     
     
-def base_train(model, train_loader, validation_loader, load_hard_frames= False, save_dir = 'models/base_tcn'):
+def base_train(model, train_loader, validation_loader, save_dir = 'models/base_tcn', debug = False):
     global learning_rate, epochs
     model.to(device)
     if not os.path.exists(save_dir):
@@ -209,8 +220,8 @@ def base_train(model, train_loader, validation_loader, load_hard_frames= False, 
             outputs = model(video)
             
             loss = 0
-            loss += loss_layer(outputs.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1))
-            loss += torch.mean(torch.clamp(mse_layer(F.log_softmax(outputs[:, :, 1:], dim=1), F.log_softmax(outputs.detach()[:, :, :-1], dim=1)), min=0, max=16))
+            loss += loss_layer(outputs.transpose(2, 1).contiguous().view(-1, num_classes), labels.view(-1)) # cross_entropy loss
+            loss += torch.mean(torch.clamp(mse_layer(F.log_softmax(outputs[:, :, 1:], dim=1), F.log_softmax(outputs.detach()[:, :, :-1], dim=1)), min=0, max=16)) # smooth loss
 
             loss_item += loss.item()
             optimizer.zero_grad()
@@ -222,54 +233,110 @@ def base_train(model, train_loader, validation_loader, load_hard_frames= False, 
             total += labels.shape[0]
 
         print('Train Epoch {}: Acc {}, Loss {}'.format(epoch, correct / total, loss_item / total))
-        base_test(model, validation_loader, load_hard_frames)
+        if debug:
+            base_test(model, validation_loader)
         torch.save(model.state_dict(), save_dir + '/{}.model'.format(epoch))
 
-
-def base_test(model, test_loader, load_hard_frames):
+def base_test(model, test_loader, save_prediction=False, random_mask=False):
     model.to(device)
     model.eval()
+    
     with torch.no_grad():
         correct = 0
         total = 0
         for (video, labels, mask, video_name) in (test_loader):
             labels = torch.Tensor(labels).long()
-            
-            # random_mask
-            random_mask = np.random.choice(2, len(mask), replace=True, p=[0.3,0.7])
-            random_mask = torch.from_numpy(random_mask).float().to(device)
-            mask = torch.Tensor(mask).float()
+            if random_mask:
+                # random_mask
+                mask = np.random.choice(2, len(mask), replace=True, p=[0.3,0.7])
+                mask = torch.from_numpy(mask).float().to(device)
+            else:
+                mask = torch.Tensor(mask).float().to(device)
             video, labels = video.to(device), labels.to(device)
             mask = mask.to(device)
-            outputs = model(video, random_mask)
-#             if load_hard_frames:
-# #                 outputs = model(video, mask)
-#                 outputs = model(video, random_mask)
-#             else:
-#                 outputs = model(video)
+            outputs = model(video, mask)
             _, predicted = torch.max(outputs.data, 1)
             correct += ((predicted == labels).sum()).item()
             total += labels.shape[0]
             
-            feature_save_dir = 'cholec80/train_dataset/random_mask_video_feature@2020/'
-            if not os.path.exists(feature_save_dir):
-                os.makedirs(feature_save_dir)
-             
-            outputs_f = outputs.squeeze(0).permute(1,0).to('cpu').numpy() # of shape (l, c)
-            video_name = video_name[0] # videoxx.npy
-            feature_save_path = os.path.join(feature_save_dir, video_name)
-            np.save(feature_save_path, outputs_f)
+            if save_prediction:
+                if random_mask:
+                    feature_save_dir = '{}/train_dataset/random_mask_type@2020/'.format(args.dataset)
+                else:
+                    feature_save_dir = '{}/train_dataset/mask_hard_frame_type@2020/'.format(args.dataset)
+                if not os.path.exists(feature_save_dir):
+                    os.makedirs(feature_save_dir)
+                  
+                outputs_f = outputs.squeeze(0).permute(1,0).to('cpu').numpy() # of shape (l, c)
+                video_name = video_name[0] # videoxx.npy
+                feature_save_path = os.path.join(feature_save_dir, video_name)
+                np.save(feature_save_path, outputs_f)
     
         print('Test: Acc {}'.format(correct / total))
 
+def base_predict(model, test_loader, argdataset, sample_rate, pki = False):
+    model.eval()
+    model.to(device)
+    pic_save_dir = 'results/{}/base_vis/'.format(args.dataset)
+    results_dir = '{}/eva/test_dataset/'.format(args.dataset)
+    if not os.path.exists(pic_save_dir):
+        os.makedirs(pic_save_dir)
 
-def extract(model, data_loader, feature_save_dir, pic_save_dir):
+    with torch.no_grad():
+        for (video, labels, mask, video_name) in tqdm(test_loader):
+            mask = torch.Tensor(mask).float()
+            video = video.to(device)
+            mask = mask.to(device)
+            re = model(video, mask)
+
+
+            confidence, predicted = torch.max(F.softmax(re.data,1), 1)
+            predicted = predicted.squeeze(0).tolist()
+            confidence = confidence.squeeze(0).tolist()
+            labels = [label.item() for label in labels]
+            
+            pic_file = video_name[0].split('.')[0] + '-vis.png'
+            pic_path = os.path.join(pic_save_dir, pic_file)
+            segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted])
+
+            if pki:
+                # best hyper by grid search
+                alpha = 3
+                beta = 0.95
+                gamma = 30            
+                predicted, _ = PKI(confidence, predicted, transtion_prior_matrix, alpha, beta, gamma)
+                        
+            
+            predicted_phases_txt = label2phase(predicted, phase2label_dict=phase2label_dicts[argdataset])
+            predicted_phases_expand = []
+            for i in predicted_phases_txt:
+                predicted_phases_expand = np.concatenate((predicted_phases_expand, [i] * 5 * sample_rate)) # we downsample the framerate from 25fps to 5fps
+ 
+            
+            target_video_file = video_name[0].split('.')[0] + '_pred.txt'
+            if args.dataset == 'm2cai16':
+                gt_file = video_name[0].split('.')[0] + '.txt'
+            else:
+                gt_file = video_name[0].split('.')[0] + '-phase.txt'
+ 
+            g_ptr = open(os.path.join(results_dir, gt_file), "r")
+            f_ptr = open(os.path.join(results_dir, target_video_file), 'w')
+ 
+            gt = g_ptr.readlines()[1:] ##
+            predicted_phases_expand = predicted_phases_expand[0:len(gt)]
+            assert len(predicted_phases_expand) == len(gt)
+ 
+            f_ptr.write("Frame\tPhase\n")
+            for index, line in enumerate(predicted_phases_expand):
+                f_ptr.write('{}\t{}\n'.format(index, line))
+            f_ptr.close()
+
+
+def cross_validate(model, data_loader, feature_save_dir):
     model.to(device)
     model.eval()
     if not os.path.exists(feature_save_dir):
         os.makedirs(feature_save_dir)
-    if not os.path.exists(pic_save_dir):
-        os.makedirs(pic_save_dir)
     with torch.no_grad():
         for (video, labels, mask, video_name) in (data_loader):
             labels = torch.Tensor(labels).long()
@@ -285,84 +352,9 @@ def extract(model, data_loader, feature_save_dir, pic_save_dir):
             video_name = video_name[0] # videoxx.npy
             
             feature_save_path = os.path.join(feature_save_dir, video_name)
-            np.save(feature_save_path, outputs_f)
-            
-#             predicted = predicted.squeeze(0).tolist()
-#             labels = [label.item() for label in labels]
-#             mask = [m.item() for m in mask]
-# 
-#             pic_file = video_name.split('.')[0] + '-vis.png'
-#             pic_path = os.path.join(pic_save_dir, pic_file)
-#             
-#             confidence = confidence.squeeze(0).tolist()
-#             segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted, mask])
-            
+            np.save(feature_save_path, outputs_f)            
             print(video_name, ' done!')
             
-            
-            
-def base_predict(model, test_loader, argdataset, sample_rate):
-    model.eval()
-    model.to(device)
-    
-    pic_save_dir = 'results/base_vis/'
-#     results_dir = 'cholec80/eva/test_dataset/'
-    results_dir = 'm2cai16/eva/test_dataset'  # for m2cai16
-    if not os.path.exists(pic_save_dir):
-        os.makedirs(pic_save_dir)    
-    with torch.no_grad():
-        for (video, labels, mask, video_name) in tqdm(test_loader):
-#             zero_one_mask = (mask!=7).to(device).float()    
-            mask = torch.Tensor(mask).float()
-            video = video.to(device)
-            mask = mask.to(device)
-            re = model(video)
-            
-#             re = model(video, mask)
-            confidence, predicted = torch.max(F.softmax(re.data,1), 1)
-            predicted = predicted.squeeze(0).tolist()
-            labels = [label.item() for label in labels]
-            
-            pic_file = video_name[0].split('.')[0] + '-vis.png'
-            pic_path = os.path.join(pic_save_dir, pic_file)
-            mask = [m.item() for m in mask]
-            confidence = confidence.squeeze(0).tolist()
-            
-            alpha = 3
-            beta = 0.95
-            gamma = 30
-#             beta2 = 0
-            
-            predicted, _ = PKI(confidence, predicted, transtion_prior_matrix, alpha, beta, gamma)
-            
-#             segment_bars(pic_path, labels, predicted, mask)
-            segment_bars_with_confidence_score(pic_path, confidence_score=confidence, labels=[labels, predicted, mask])
-            
-           
-            
-            predicted_phases_txt = label2phase(predicted, phase2label_dict=phase2label_dicts[argdataset])
-            predicted_phases_expand = []
-            for i in predicted_phases_txt:
-                predicted_phases_expand = np.concatenate((predicted_phases_expand, [i] * 5 * sample_rate)) # 5 is the resampled resolution
- 
- 
-            target_video_file = video_name[0].split('.')[0] + '_pred.txt'
-#             gt_file = video_name[0].split('.')[0] + '-phase.txt'
-            gt_file = video_name[0].split('.')[0] + '.txt'  # for m2cai16
- 
-            g_ptr = open(os.path.join(results_dir, gt_file), "r")
-            f_ptr = open(os.path.join(results_dir, target_video_file), 'w')
- 
-            gt = g_ptr.readlines()[1:] ##
-            predicted_phases_expand = predicted_phases_expand[0:len(gt)]
-            assert len(predicted_phases_expand) == len(gt)
- 
-            f_ptr.write("Frame\tPhase\n")
-            for index, line in enumerate(predicted_phases_expand):
-                f_ptr.write('{}\t{}\n'.format(index, line))
-            f_ptr.close()
-
-
 def grid_search(model, test_loader):
     model.to(device)
     model.eval()
@@ -376,11 +368,7 @@ def grid_search(model, test_loader):
             mask = torch.Tensor(mask).float()
             video, labels = video.to(device), labels.to(device)
             mask = mask.to(device)
-#             if load_hard_frames:
-#                 outputs = model(video, mask)
-#             else:
-#                 outputs = model(video)
-            outputs = model(video)
+            outputs = model(video, mask)
             confidence, predicted = torch.max(F.softmax(outputs.data, dim=1), 1)
             predicted = predicted.tolist()[0]
             confidence = confidence.tolist()[0]
@@ -388,187 +376,189 @@ def grid_search(model, test_loader):
             
             results_dict[video_name[0].split('.')[0]] = [predicted, confidence, gt]
             
-#     alpha_choices = [1,2,3,4,5,6,7,8,9,10,15,20]
-#     beta_choices = [0,0.1,0.2,0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
-#     beta2_choices = [0,0.1,0.2,0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
-#     gamma_choices = [30,40,50,60,70,80,90,100]
-    alpha_choices = [3]
-    beta_choices = [0.95]
-    gamma_choices = [30]
-#     alpha2_choices = [1,5,6,7,8,9,10,11,12,13,14,15,20,25,30]
-#     beta2_choices = [0.2,0.3,0.4,0.5,0.6,0.65,0.7,0.75,0.8,0.9,0.95]
+    alpha_choices = [1,2,3,4,5,6,7,8,9,10,15,20]
+    beta_choices = [0,0.1,0.2,0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+    gamma_choices = [30,40,50,60,70,80,90,100]
+#     alpha_choices = [3]
+#     beta_choices = [0.95]
+#     gamma_choices = [30]
 
-    pic_dir = 'results/pki_vis/'
-    if not os.path.exists(pic_dir):
-        os.makedirs(pic_dir)
     c_best = 0
     c_beta = 0
     c_alpha = 0
     c_gamma = 0
-    c_beta2 = 0
-    c_alpha2 = 0
     for alpha in alpha_choices:
         for beta in beta_choices:
             for gamma in gamma_choices:
-                for beta2 in beta2_choices:
-                    for alpha2 in alpha2_choices:
-                        correct = 0
-                        total = 0
+                correct = 0
+                total = 0
+            
+                for _, result in results_dict.items():
+                    refined_predicted = PKI(result[1], result[0], transtion_prior_matrix, alpha, beta, gamma)
+                    correct += np.sum(np.array(refined_predicted) == np.array(result[2]))
+                    total += len(refined_predicted)
+                print('alpha: {} beta: {}, gamma:{} beta2:{} acc: {}'.format(alpha, beta, gamma, correct/total))
+                if correct / total > c_best:
+                    c_best = correct/ total
+                    c_alpha = alpha
+                    c_beta = beta
+                    c_gamma = gamma
                     
-                        for _, result in results_dict.items():
-            #                 import pdb
-            #                 pdb.set_trace()
-                            refined_predicted, confidence = PKI(result[1], result[0], transtion_prior_matrix, alpha, beta, gamma)
-#                             refined_predicted = PKI2(confidence, refined_predicted, alpha2, beta2)
-    
-                            pic_path = os.path.join(pic_dir, _+'.png')
-    #                         segment_bars_with_confidence_score(pic_path, confidence_score=result[1], labels=[result[2], result[0], refined_predicted])
-                            correct += np.sum(np.array(refined_predicted) == np.array(result[2]))
-                            total += len(refined_predicted)
-                        print('alpha: {} beta: {}, gamma:{} beta2:{} acc: {}'.format(alpha, beta, gamma, beta2, correct/total))
-                        if correct / total > c_best:
-                            c_best = correct/ total
-                            c_alpha = alpha
-                            c_beta = beta
-                            c_gamma = gamma
-                            c_beta2 = beta2
-                            c_alpha2 = alpha2
-    print('Best alpha :{} beta: {} gamma:{}  beta2:{} alpha2:{} best :{}'.format(c_alpha, c_beta, c_gamma, c_beta2, c_alpha2, c_best)) 
+    print('Best alpha :{} beta: {} gamma:{} best :{}'.format(c_alpha, c_beta, c_gamma, c_best)) 
     
     
 base_model = model.BaseCausalTCN(num_layers, num_f_maps, dim, num_classes)
-# refine_model = model.RefineCausualTCN(4, num_f_maps, num_classes, num_classes)
-refine_model = model.MultiStageRefineGRU(num_stage=num_stages, num_f_maps=128, num_classes=num_classes)
-# causal_tcn = model.MultiStageCausalTCN(num_stages, num_layers, num_f_maps, dim, num_classes)
+refine_model = model.MultiStageRefineGRU(num_stage=num_stages, num_f_maps=128, num_classes=num_classes) #128
 
 if args.action == 'base_train':
-    load_hard_frames = True if args.dataset == 'cholec80' else False # we do not calculate hard framesfor m2cai16 dataset
-    print('load hard frames ', load_hard_frames)
-    video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
+    video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
-    video_testdataset = VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
+    video_testdataset = VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
     
-    base_model.load_state_dict(torch.load('models/base_tcn/100.model')) # fine_tune on the m2cai16
     model_save_dir = 'models/{}/base_tcn'.format(args.dataset)
-    base_train(base_model, video_train_dataloader, video_test_dataloader, load_hard_frames=load_hard_frames, save_dir=model_save_dir)
+    base_train(base_model, video_train_dataloader, video_test_dataloader, save_dir=model_save_dir, debug=True)
 
-if args.action == 'base_test':
-    model_path = 'models/base_tcn/100.model' if args.dataset == 'cholec80' else 'models/m2cai16/base_tcn/100.model'
-    load_hard_frames = True if args.dataset == 'cholec80' else False # we do not calculate hard framesfor m2cai16 dataset
-    print(load_hard_frames)
-    base_model.load_state_dict(torch.load(model_path))
-    video_testdataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
-    video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
-    base_test(base_model, video_test_dataloader, load_hard_frames=load_hard_frames)
 
 if args.action == 'base_predict':
-    load_hard_frames = True if args.dataset == 'cholec80' else False # we do not calculate hard framesfor m2cai16 dataset
-    model_path = 'models/base_tcn/100.model' if args.dataset == 'cholec80' else 'models/m2cai16/base_tcn/100.model' # for m2cai16
-
+    model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset) # use the saved model
+#     model_path = 'models/{}/base_tcn/100.model'.format(args.dataset) # use your model
     base_model.load_state_dict(torch.load(model_path))
-    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
+    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
-#     results_dir = os.path.join(args.dataset, 'eva/test_dataset')
     base_predict(base_model,video_test_dataloader,args.dataset, sample_rate)
     
 
 if args.action == 'refine_train':
-    base_model_path = 'models/base_tcn/100.model'
+    base_model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset) # use the saved model
+#     base_model_path = 'models/{}/base_tcn/100.model'.format(args.dataset)  # use your model
     base_model.load_state_dict(torch.load(base_model_path))
     
     # the sample rate for prob sequence is 1.
-    video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'refine_model_video_feature@2020/epoch-100', load_hard_frames=True)
-#     video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'mask_hard_frame_video_feature@2020', load_hard_frames=True)
-#     video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'random_mask_video_feature@2020', load_hard_frames=True)
-#     train_num = 96
-#     for i in range(99,train_num, -1):
-#         video_back_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'refine_model_video_feature@2020/epoch-{}'.format(train_num), load_hard_frames=True)
-#         video_traindataset.merge(video_back_traindataset) # add more training data
-    video_back_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'mask_hard_frame_video_feature@2020', load_hard_frames=True)
-#     video_back_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'random_mask_video_feature@2020', load_hard_frames=True)
+    video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'cross_validate_type@2020')
+    video_back_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'mask_hard_frame_type@2020')
     video_traindataset.merge(video_back_traindataset) # add more training data
-#     video_back_traindataset_2 = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'random_mask_video_feature@2020', load_hard_frames=True)
+#     video_back_traindataset_2 = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'random_mask_type@2020')
 #     video_traindataset.merge(video_back_traindataset_2)
     video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
     
-    
-    video_testdataset = VideoDataset('cholec80', 'cholec80/test_dataset', sample_rate, 'video_feature@2020', load_hard_frames=True)
+    video_testdataset = VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
+    refine_train(base_model, refine_model, video_train_dataloader, video_test_dataloader, save_dir='models/{}/refine_gru/'.format(args.dataset), debug=True)
     
-    refine_train(base_model, refine_model, video_train_dataloader, video_test_dataloader)
-    
-if args.action == 'refine_test':
-    base_model_path = 'models/base_tcn/100.model'
-    base_model.load_state_dict(torch.load(base_model_path))
-
-    refine_model = model.MultiStageRefineGRU(num_stage=5, num_f_maps=128, num_classes=num_classes)
-
-#     video_testdataset =VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'refine_model_video_feature@2020/epoch-100', load_hard_frames=True)
-    video_testdataset =VideoDataset('cholec80', 'cholec80/test_dataset', sample_rate, 'video_feature@2020', load_hard_frames=True)
-
-    video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
-    for i in range(1,50):
-        refine_model_path = 'models/refine_model_stage5/{}.model'.format(i)
-        refine_model.load_state_dict(torch.load(refine_model_path))
-        print(i)
-        refine_test(base_model, refine_model, video_test_dataloader)
 
 if args.action == 'refine_predict':
-    refine_model = model.MultiStageRefineGRU(num_stage=4, num_f_maps=128, num_classes=num_classes)
-    load_hard_frames = True if args.dataset == 'cholec80' else False # we do not calculate hard framesfor m2cai16 dataset
-    base_model_path = 'models/base_tcn/100.model'
-    refine_model_path = 'models/refine_model/31.model' # 31 
+    base_model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset)
+    refine_model_path = 'saved_models/{}/refine_gru/refine_gru.model'.format(args.dataset)
+#     
+#     base_model_path = 'models/{}/base_tcn/100.model'.format(args.dataset) # your model
+#     refine_model_path = 'models/{}/refine_gru/31.model'.format(args.dataset) # your model, 31
     base_model.load_state_dict(torch.load(base_model_path))
     refine_model.load_state_dict(torch.load(refine_model_path))
     
-#     video_testdataset =VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'refine_model_video_feature@2020', load_hard_frames=True)
-    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
-
+    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
     refine_predict(base_model, refine_model, video_test_dataloader)
     
-if args.action == 'cross_validate': # in order to get training data for the refine model
-    # useless
+    
+
+if args.action == 'cross_validate_type': # get cross-validate-type disturbed prediction sequence
     kf = KFold(10, shuffle=True, random_state=seed) # 10-fold cross validate
-    video_list = ['video{0:>2d}'.format(i) for i in range(1,41)]
+    if args.dataset == 'cholec80':
+        video_list = ['video{0:>2d}'.format(i) for i in range(1,41)]
+    else:
+        video_list = ['workflow_video_{:0>2d}'.format(i) for i in range(1, 28)]
+
     for k, (train_idx, test_idx) in enumerate(kf.split(video_list)):
         if args.k != -100:
             if k != args.k:
                 continue
         base_model = model.BaseCausalTCN(num_layers, num_f_maps, dim, num_classes)
         
-        trainlist = ['video{:0>2d}'.format(i+1) for i in train_idx]
-        testlist = ['video{:0>2d}'.format(i+1) for i in test_idx]
+        if args.dataset == 'cholec80':
+            trainlist = ['video{:0>2d}'.format(i+1) for i in train_idx]
+            testlist = ['video{:0>2d}'.format(i+1) for i in test_idx]
+        elif args.dataset == 'm2cai16':
+            trainlist = ['workflow_video_{:0>2d}'.format(i+1) for i in train_idx]
+            testlist = ['workflow_video_{:0>2d}'.format(i+1) for i in test_idx]
+        
         
         print('split {}: {}'.format(k, '_'.join(testlist)))
-        train_video_dir = 'cross_validate_video_feature@2020/{}/'.format('_'.join(testlist))
-        test_video_dir = 'cross_validate_video_feature_for_validation@2020/'
+        train_video_dir = 'cross_validate_video_feature@2020/{}/'.format('_'.join(testlist)) # pre-extracted inceptionv3 feature
+        test_video_dir = 'cross_validate_video_feature_for_validation@2020/' # pre-extracted inceptionv3 feature
         
-        model_save_dir = 'models/cross_validate/base_tcn/{}'.format('_'.join(testlist))
-#         video_traindataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, train_video_dir, load_hard_frames=True)
-        video_testdataset = VideoDataset('cholec80', 'cholec80/train_dataset', sample_rate, test_video_dir, blacklist=trainlist, load_hard_frames=True)
-#         video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
+        model_save_dir = 'models/{}/cross_validate/base_tcn/{}'.format(args.dataset, '_'.join(testlist))
+        video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, train_video_dir)
+        video_testdataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, test_video_dir, blacklist=trainlist)
+        video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
         video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
         
-#         for epoch in range(50, 101):
-        base_model.load_state_dict(torch.load(model_save_dir + '/{}.model'.format(epochs)))
-    #         base_train(base_model, video_train_dataloader, video_test_dataloader, save_dir=model_save_dir)
+        saved_model_dir = 'saved_models/{}/cross_validate/base_tcn/{}/base_tcn.model'.format(args.dataset, '_'.join(testlist))
+        base_model.load_state_dict(torch.load(saved_model_dir))  # load saved model
+#         base_model.load_state_dict(torch.load(model_save_dir + '/{}.model'.format(epochs))) # load your model
+#         base_train(base_model, video_train_dataloader, video_test_dataloader, save_dir=model_save_dir) # train your model
             
-        feature_save_dir = 'cholec80/train_dataset/refine_model_video_feature@2020/epoch-{}/'.format(epochs)
-        pic_save_dir = 'results/prior_train_data/'
+        feature_save_dir = '{}/train_dataset/cross_validate_type@2020/'.format(args.dataset)
         print('Training Done!')
-        extract(base_model, video_test_dataloader, feature_save_dir, pic_save_dir)
+        cross_validate(base_model, video_test_dataloader, feature_save_dir)
 
+
+if args.action == 'mask_hard_frame_type': # get mask_hard_frame_type disturbed prediction sequence
+    model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset) # use the saved model
+#     model_path = 'models/{}/base_tcn/100.model'.format(args.dataset) # use your model
+    base_model.load_state_dict(torch.load(model_path))
+    video_testdataset =VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
+    video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
+    base_test(base_model, video_test_dataloader, save_prediction=True, random_mask=False)
     
-if args.action == 'grid_search':
-    load_hard_frames = True if args.dataset == 'cholec80' else False # we do not calculate hard framesfor m2cai16 dataset
-    model_path = 'models/base_tcn/100.model' if args.dataset == 'cholec80' else 'models/m2cai16/base_tcn/100.model' # for m2cai16
+if args.action == 'random_mask_type':
+    model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset) # use the saved model
+#     model_path = 'models/{}/base_tcn/100.model'.format(args.dataset) # use your model
+    base_model.load_state_dict(torch.load(model_path))
+    video_testdataset =VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
+    video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
+    base_test(base_model, video_test_dataloader, save_prediction=True, random_mask=True)
+
+if args.action == 'grid_search': # grid search the best hyper for PKI
+    model_path = 'saved_models/{}/base_tcn/base_tcn.model'.format(args.dataset) # use the saved model
+#     model_path = 'models/base_tcn/100.model' # use your model
 
     base_model.load_state_dict(torch.load(model_path))
-    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020', load_hard_frames=load_hard_frames)
+    video_testdataset =VideoDataset(args.dataset, '{}/test_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_test_dataloader = DataLoader(video_testdataset, batch_size=1, shuffle=False, drop_last=False)
-#     results_dir = os.path.join(args.dataset, 'eva/test_dataset')
     grid_search(base_model,video_test_dataloader)
+    
+if args.action == 'vis_disturbed_sequence':
+    sequence_dir = 'random_mask_type@2020'
+    pic_dir = 'disturbed_vis/{}/{}/'.format(args.dataset, sequence_dir)
+    if not os.path.exists(pic_dir):
+        os.makedirs(pic_dir)
+    video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, sequence_dir)
+    video_train_dataloader = DataLoader(video_traindataset, batch_size=1, shuffle=True, drop_last=False)
+    correct = total = 0
+    for (video, labels, mask, video_name) in (video_train_dataloader):
+        ## labels is sample_rate times longer than video
+        labels = labels[::sample_rate]
+
+        video_name = video_name[0].split('.')[0]
+
+        confidence, original_predicted = torch.max(F.softmax(video.data,2), 2)
+        
+        correct += (original_predicted==torch.Tensor(labels).long()).sum().item()
+        total += len(labels)
+        
+
+        confidence = confidence.squeeze(0).tolist()
+        original_predicted= original_predicted.squeeze(0).tolist()
+
+        labels = [label.item() for label in labels]
+
+        segment_bars_with_confidence_score(pic_dir + video_name + '.png', confidence_score=confidence, labels=[labels, original_predicted])
+        print(video_name, ' done!')
+    print(correct / total)
+        
+
+        
+
     
     

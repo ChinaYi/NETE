@@ -129,7 +129,10 @@ class VideoDataset(Dataset):
         self.labels = []
         self.hard_frames = []
         self.video_names = []
-        self.hard_frame_index = 7 
+        if dataset =='cholec80':
+            self.hard_frame_index = 7
+        if dataset == 'm2cai16':
+            self.hard_frame_index = 8 
 
         video_feature_folder = os.path.join(root, video_feature_folder)
         label_folder = os.path.join(root, 'annotation_folder')
