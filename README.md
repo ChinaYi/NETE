@@ -1,11 +1,10 @@
-# Learning Phase Transition Priors for Online Surgical Phase Recognition.
+# Not End-to-End: Explore Multi-Stage Architecture for Online Surgical Phase Recognition
 
 ## Enviroment
-Pytorch == 1.1.0, torchvision == 0.3.0, python == 3.7 CUDA=10.0
+Pytorch == 1.1.0, torchvision == 0.3.0, python == 3.6 CUDA=10.0
 
 ## Reproduce our results
-Download the dataset at https://disk.pku.edu.cn:443/link/DE7DECE90BA70E601AB2E9DF1B6F2D45  Valid Until: 2023-04-03 23:59
-Download the trained models at https://disk.pku.edu.cn:443/link/43DE87ACD388496FF6BAEB14D0D5391E Valid Until: 2023-04-03 23:59
+Download the dataset and the pretrained models at https://pan.baidu.com/s/1I9WrHH0KKeebsRWtGK4fdA to reproduce our results.
 
 ```
 python main.py --action=base_predict
