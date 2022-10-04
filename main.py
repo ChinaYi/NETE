@@ -81,6 +81,18 @@ def refine_train(base_model, refine_model, train_loader, validation_loader, save
         for (video, labels, mask, video_name) in (train_loader):
             ## labels is two times longer than video
             labels = labels[::sample_rate]
+            
+            # LB = [label.item() for label in labels]
+            # GT = torch.zeros(len(LB), 7)
+            # for i in range(len(LB)):
+            #     GT[i][LB[i]] = 1
+            # Gass = np.random.normal(loc=0, scale=0.7, size=(len(LB), 7))
+            # video = (GT+torch.Tensor(Gass)).float()
+            # video = video.unsqueeze(0)
+            # Gass = np.random.normal(loc=0, scale=0.5, size=(len(labels), 7))
+            # Gass = torch.Tensor(Gass).unsqueeze(0)
+            # video = video + Gass
+            
             labels = torch.Tensor(labels).long()
             mask = torch.Tensor(mask).float()
             video, labels = video.to(device), labels.to(device)
@@ -546,7 +558,10 @@ if args.action == 'refine_train':
     base_model.load_state_dict(torch.load(base_model_path))
     
     # the sample rate for prob sequence is 1.
+#     video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), sample_rate, 'video_feature@2020')
     video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'cross_validate_type@2020')
+#     video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'mask_hard_frame_type@2020')
+#     video_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'random_mask_type@2020')
 #     video_back_traindataset = VideoDataset(args.dataset, '{}/train_dataset'.format(args.dataset), 1, 'mask_hard_frame_type@2020')
 #     video_traindataset.merge(video_back_traindataset) # add more training data
 #     video_back_traindataset_2 = VideoDataset('cholec80', 'cholec80/train_dataset', 1, 'random_mask_type@2020')
