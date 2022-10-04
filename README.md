@@ -14,7 +14,7 @@ python main.py --action=refine_predict
 ```
 
 Evaluation code is obtained in the dataset. (cholec80/eva/Main.m).
-You will get Acc=88.7% and 92.6%, respectively.
+You will get Acc=88.7% and 91.7%, respectively.
 
 ## Train the model with your own settings
 ```
