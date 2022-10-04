@@ -6,7 +6,7 @@
 Pytorch == 1.1.0, torchvision == 0.3.0, python == 3.6 CUDA=10.0
 
 ## Reproduce our results
-Download the dataset and the pretrained models at https://pan.baidu.com/s/1I9WrHH0KKeebsRWtGK4fdA to reproduce our results.
+Download the dataset and the pretrained models at https://pan.baidu.com/s/1St__Okog5M8XmhQAxz8XyA?pwd=uahd to reproduce our results.
 
 ```
 python main.py --action=base_predict
