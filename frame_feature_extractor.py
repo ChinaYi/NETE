@@ -1,4 +1,4 @@
-# This file contains the code about:
+# This file contains the codes about:
 # 1. Extract inceptionv3 features for the video frame.
 # 2. Find out hard frames.
 # This step is not necessary if you download the extracted feature we provided.
