@@ -1,7 +1,6 @@
 # Not End-to-End: Explore Multi-Stage Architecture for Online Surgical Phase Recognition
 
 ## Accepted by ACCV2022
-## Arxiv Address: https://arxiv.org/pdf/2107.04810.pdf
 
 ## Enviroment
 Pytorch == 1.1.0, torchvision == 0.3.0, python == 3.6 CUDA=10.0
